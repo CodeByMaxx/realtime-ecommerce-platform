@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>E-Commerce Realtime Dashboard</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: auto;
+            padding: 30px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 28px;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #94a3b8;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #22c55e;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 22px;
+        }
+
+        .card-title {
+            color: #94a3b8;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .card-value {
+            font-size: 30px;
+            font-weight: bold;
+        }
+
+        .charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .chart-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .chart-card h2 {
+            margin-top: 0;
+            font-size: 18px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 350px;
+        }
+
+        .error {
+            display: none;
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            background: #450a0a;
+            border: 1px solid #7f1d1d;
+            color: #fecaca;
+        }
+
+        @media (max-width: 900px) {
+            .cards {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .charts {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+            }
+
+            .cards {
+                grid-template-columns: 1fr;
+            }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <header>
+        <div>
+            <h1>Realtime E-Commerce</h1>
+            <div style="color:#94a3b8; margin-top:6px;">
+                Kafka → Spark → Redis
+            </div>
+        </div>
+
+        <div class="status">
+            <span class="dot" id="statusDot"></span>
+            <span id="statusText">Live</span>
+        </div>
+    </header>
+
+    <div class="error" id="errorBox"></div>
+
+    <!-- KPI CARDS -->
+
+    <div class="cards">
+
+        <div class="card">
+            <div class="card-title">
+                Revenue
+            </div>
+
+            <div class="card-value" id="revenue">
+                €0.00
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                Orders
+            </div>
+
+            <div class="card-value" id="orders">
+                0
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                Events
+            </div>
+
+            <div class="card-value" id="events">
+                0
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                Unique Users
+            </div>
+
+            <div class="card-value" id="users">
+                0
+            </div>
+        </div>
+
+    </div>
+
+
+    <!-- CHARTS -->
+
+    <div class="charts">
+
+        <div class="chart-card">
+            <h2>Revenue / Minute</h2>
+
+            <div class="chart-container">
+                <canvas id="revenueChart"></canvas>
+            </div>
+        </div>
+
+
+        <div class="chart-card">
+            <h2>Events / Minute</h2>
+
+            <div class="chart-container">
+                <canvas id="eventsChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+let revenueChart;
+let eventsChart;
+
+
+// ============================================================
+// Formatting
+// ============================================================
+
+function formatMoney(value) {
+
+    return new Intl.NumberFormat(
+        "de-DE",
+        {
+            style: "currency",
+            currency: "EUR"
+        }
+    ).format(Number(value || 0));
+}
+
+
+// ============================================================
+// Load Current Metrics
+// ============================================================
+
+async function loadMetrics() {
+
+    try {
+
+        const response = await fetch("/api/metrics");
+
+        if (!response.ok) {
+            throw new Error("Metrics API error");
+        }
+
+        const data = await response.json();
+
+        document.getElementById("revenue").textContent =
+            formatMoney(data.revenue);
+
+        document.getElementById("orders").textContent =
+            Number(data.orders || 0).toLocaleString("de-DE");
+
+        document.getElementById("events").textContent =
+            Number(data.events || 0).toLocaleString("de-DE");
+
+        document.getElementById("users").textContent =
+            Number(data.unique_users || 0).toLocaleString("de-DE");
+
+        setOnline();
+
+    } catch (error) {
+
+        console.error(error);
+        setOffline();
+    }
+}
+
+
+// ============================================================
+// Load History
+// ============================================================
+
+async function loadHistory() {
+
+    try {
+
+        const response = await fetch("/api/history");
+
+        if (!response.ok) {
+            throw new Error("History API error");
+        }
+
+        const data = await response.json();
+
+        updateCharts(data);
+
+        setOnline();
+
+    } catch (error) {
+
+        console.error(error);
+        setOffline();
+    }
+}
+
+
+// ============================================================
+// Charts
+// ============================================================
+
+function updateCharts(data) {
+
+    const labels = data.map(
+        item => item.window_start
+    );
+
+    const revenues = data.map(
+        item => Number(item.revenue || 0)
+    );
+
+    const events = data.map(
+        item => Number(item.events || 0)
+    );
+
+
+    // --------------------------------------------------------
+    // Revenue Chart
+    // --------------------------------------------------------
+
+    if (!revenueChart) {
+
+        revenueChart = new Chart(
+            document.getElementById("revenueChart"),
+            {
+                type: "line",
+
+                data: {
+                    labels: labels,
+
+                    datasets: [
+                        {
+                            label: "Revenue (€)",
+                            data: revenues,
+                            tension: 0.25,
+                            fill: true
+                        }
+                    ]
+                },
+
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+
+                    scales: {
+                        y: {
+                            beginAtZero: false
+                        }
+                    }
+                }
+            }
+        );
+
+    } else {
+
+        revenueChart.data.labels = labels;
+        revenueChart.data.datasets[0].data = revenues;
+
+        revenueChart.update();
+    }
+
+
+    // --------------------------------------------------------
+    // Events Chart
+    // --------------------------------------------------------
+
+    if (!eventsChart) {
+
+        eventsChart = new Chart(
+            document.getElementById("eventsChart"),
+            {
+                type: "bar",
+
+                data: {
+                    labels: labels,
+
+                    datasets: [
+                        {
+                            label: "Events",
+                            data: events
+                        }
+                    ]
+                },
+
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            }
+        );
+
+    } else {
+
+        eventsChart.data.labels = labels;
+        eventsChart.data.datasets[0].data = events;
+
+        eventsChart.update();
+    }
+}
+
+
+// ============================================================
+// Connection Status
+// ============================================================
+
+function setOnline() {
+
+    document.getElementById("statusDot").style.background =
+        "#22c55e";
+
+    document.getElementById("statusText").textContent =
+        "Live";
+
+    document.getElementById("errorBox").style.display =
+        "none";
+}
+
+
+function setOffline() {
+
+    document.getElementById("statusDot").style.background =
+        "#ef4444";
+
+    document.getElementById("statusText").textContent =
+        "Offline";
+}
+
+
+// ============================================================
+// Initial Load
+// ============================================================
+
+loadMetrics();
+loadHistory();
+
+
+// ============================================================
+// Live Refresh
+// ============================================================
+
+setInterval(
+    loadMetrics,
+    2000
+);
+
+setInterval(
+    loadHistory,
+    5000
+);
+
+</script>
+
+</body>
+</html>
