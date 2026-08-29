@@ -1,94 +1,258 @@
-# Real-Time E-Commerce Platform
+# Realtime E-Commerce Platform
 
-Eine end-to-end **Real-Time E-Commerce Data Platform** zur Erfassung, Verarbeitung, Speicherung und Visualisierung von E-Commerce-Events.
+Eine containerisierte **Realtime-E-Commerce-Datenplattform**, die Events über Kafka empfängt, mit Apache Spark Structured Streaming verarbeitet, aggregierte Echtzeit-Metriken in Redis speichert und über ein Dashboard visualisiert.
 
-Das Projekt kombiniert eine lokale Streaming-Pipeline mit einer Databricks-Lakehouse-Architektur.
+Zusätzlich ist **Databricks** als Bestandteil der geplanten bzw. erweiterten Data-Lake-/Analytics-Schicht vorgesehen.
 
 ---
 
-## 1. Projektübersicht
+## Architektur
 
-Die Plattform simuliert einen realen E-Commerce-Datenfluss:
+![Realtime E-Commerce Platform](docs/dashboard.png)
+
+### Datenfluss
 
 ```text
-                    ┌────────────────────┐
-                    │   E-Commerce       │
-                    │   Event Producer   │
-                    └─────────┬──────────┘
-                              │
-                              │ JSON Events
-                              ▼
-                    ┌────────────────────┐
-                    │      Apache        │
-                    │       Kafka        │
-                    │                    │
-                    │ ecommerce-events   │
-                    └─────────┬──────────┘
-                              │
-                 ┌────────────┴────────────┐
-                 │                         │
-                 ▼                         ▼
-       ┌──────────────────┐       ┌──────────────────┐
-       │ Spark Structured  │       │    Databricks    │
-       │ Streaming         │       │    Lakehouse     │
-       │                  │       │                  │
-       │ Transformations │       │ Bronze            │
-       │ Aggregations     │       │ Silver            │
-       └────────┬─────────┘       │ Gold              │
-                │                 └──────────────────┘
-                │
-                ▼
-       ┌──────────────────┐
-       │      Redis       │
-       │                  │
-       │ Live Metrics     │
-       └────────┬─────────┘
-                │
-                ▼
-       ┌──────────────────┐
-       │ Flask API        │
-       │ + Dashboard      │
-       └──────────────────┘
+                    ┌─────────────────────┐
+                    │   E-Commerce        │
+                    │   Producer          │
+                    │   producer.py       │
+                    └──────────┬──────────┘
+                               │
+                               │ JSON Events
+                               ▼
+                    ┌─────────────────────┐
+                    │       Kafka         │
+                    │                     │
+                    │ ecommerce-events    │
+                    │ 3 Partitions        │
+                    └──────────┬──────────┘
+                               │
+                               │ Streaming
+                               ▼
+                    ┌─────────────────────┐
+                    │   Spark Structured  │
+                    │      Streaming      │
+                    │                     │
+                    │ - JSON Parsing      │
+                    │ - Revenue          │
+                    │ - Orders            │
+                    │ - Events            │
+                    │ - Unique Users      │
+                    │ - 1-Minute Windows  │
+                    └──────────┬──────────┘
+                               │
+                               │ Aggregated Metrics
+                               ▼
+                    ┌─────────────────────┐
+                    │       Redis         │
+                    │                     │
+                    │ ecommerce:metrics   │
+                    └──────────┬──────────┘
+                               │
+                               │ HTTP/API
+                               ▼
+                    ┌─────────────────────┐
+                    │      Dashboard      │
+                    │                     │
+                    │ Flask + Frontend    │
+                    │ Realtime Metrics    │
+                    └─────────────────────┘
+
+
+             ┌────────────────────────────────┐
+             │          Databricks            │
+             │                                │
+             │ Data Lake / Analytics Layer    │
+             │ Historical Data / BI / ML      │
+             └────────────────────────────────┘
 ```
 
-Kafka dient dabei als Event-Streaming-Schicht. Kafka organisiert Events in Topics und partitionierte Logs.
+---
 
-Databricks übernimmt die langfristige Speicherung und analytische Verarbeitung im Lakehouse.
+# 1. Projektziel
+
+Das Projekt bildet eine typische moderne Realtime-Data-Engineering-Pipeline für einen E-Commerce-Anwendungsfall ab.
+
+Dabei werden kontinuierlich Events erzeugt, über Kafka transportiert und anschließend mit Spark verarbeitet.
+
+Beispielsweise:
+
+* `view_product`
+* `add_to_cart`
+* `purchase`
+* `refund`
+
+Aus diesen Events werden Echtzeitmetriken berechnet.
+
+Aktuell werden unter anderem folgende Kennzahlen verarbeitet:
+
+| Metrik         | Beschreibung                                  |
+| -------------- | --------------------------------------------- |
+| `revenue`      | Umsatz inklusive Berücksichtigung von Refunds |
+| `orders`       | Anzahl der Käufe                              |
+| `events`       | Anzahl aller Events                           |
+| `unique_users` | Anzahl unterschiedlicher Benutzer             |
+| `window_start` | Beginn des Zeitfensters                       |
+| `window_end`   | Ende des Zeitfensters                         |
+
+Die Aggregation erfolgt aktuell in **1-Minuten-Zeitfenstern**.
 
 ---
 
 # 2. Technologie-Stack
 
-| Komponente           | Technologie                       | Aufgabe                         |
-| -------------------- | --------------------------------- | ------------------------------- |
-| Event Generator      | Python                            | Generiert E-Commerce-Events     |
-| Message Broker       | Apache Kafka                      | Streaming und Buffering         |
-| Stream Processing    | Apache Spark Structured Streaming | Echtzeitverarbeitung            |
-| Cache / Live Metrics | Redis                             | Aktuelle Kennzahlen             |
-| Backend              | Flask / Python                    | REST API                        |
-| Frontend             | Dashboard / HTML / JavaScript     | Visualisierung                  |
-| Data Lakehouse       | Databricks                        | Historische Daten und Analytics |
-| Storage Format       | Delta Lake                        | Persistente Lakehouse-Tabellen  |
-| Containerisierung    | Docker Compose                    | Lokale Infrastruktur            |
+## Core
 
-Databricks basiert auf Apache Spark und verwendet Delta Lake als Storage-Layer für Lakehouse-Tabellen.
+* Python
+* Docker
+* Docker Compose
+
+## Streaming
+
+* Apache Kafka
+* Apache Spark Structured Streaming
+
+## Storage / Cache
+
+* Redis
+
+## Backend
+
+* Flask
+* REST API
+
+## Frontend
+
+* Web Dashboard
+* Realtime-Metriken
+
+## Data Lake / Analytics
+
+* Databricks
+* perspektivisch Delta Lake
+* historische Daten
+* Analytics / BI
+* Machine Learning
 
 ---
 
-# 3. Aktuelle Architektur
+# 3. Projektstruktur
 
-## 3.1 Event Producer
-
-Der Producer befindet sich im Projekt beispielsweise unter:
+Die aktuelle Projektstruktur ist ungefähr:
 
 ```text
-producer/
-└── producer.py
+realtime-ecommerce-platform/
+│
+├── docker-compose.yml
+│
+├── README.md
+│
+├── producer/
+│   ├── producer.py
+│   └── requirements.txt
+│
+├── spark/
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── streaming.py
+│
+├── dashboard/
+│   ├── Dockerfile
+│   ├── app.py
+│   ├── requirements.txt
+│   └── templates/
+│       └── ...
+│
+├── docs/
+│   └── dashboard.png
+│
+└── ...
 ```
 
-Der Producer erzeugt kontinuierlich E-Commerce-Events.
+Die tatsächlichen Dateien können je nach aktuellem lokalen Stand noch leicht abweichen.
+
+---
+
+# 4. Docker Services
+
+Die Anwendung wird über Docker Compose betrieben.
+
+Die wichtigsten Services sind:
+
+```text
+ecommerce-kafka
+ecommerce-redis
+ecommerce-spark
+ecommerce-dashboard
+```
+
+Kafka stellt den Event-Stream bereit.
+
+Redis speichert die aktuellen aggregierten Kennzahlen.
+
+Spark liest die Events aus Kafka und verarbeitet sie.
+
+Das Dashboard greift auf die in Redis gespeicherten Metriken zu.
+
+---
+
+# 5. Kafka
+
+Kafka bildet die zentrale Streaming-Schicht.
+
+Der verwendete Topic ist:
+
+```text
+ecommerce-events
+```
+
+Aktuell besitzt der Topic:
+
+```text
+3 Partitions
+Replication Factor: 1
+```
+
+## Topic anzeigen
+
+```bash
+sudo docker exec ecommerce-kafka \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --list
+```
+
+Erwartete Ausgabe:
+
+```text
+ecommerce-events
+```
+
+## Topic detailliert anzeigen
+
+```bash
+sudo docker exec ecommerce-kafka \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --describe \
+  --topic ecommerce-events
+```
 
 Beispiel:
+
+```text
+PartitionCount: 3
+ReplicationFactor: 1
+```
+
+---
+
+# 6. E-Commerce Events
+
+Der Producer erzeugt JSON-Events.
+
+Ein Event besitzt aktuell folgende Struktur:
 
 ```json
 {
@@ -101,110 +265,177 @@ Beispiel:
 }
 ```
 
-Mögliche Event-Typen sind unter anderem:
+Das Schema wird in Spark definiert als:
 
 ```text
-view_product
-add_to_cart
-purchase
-refund
+event_id     String
+user_id      Integer
+product_id   Integer
+event_type   String
+amount       Double
+timestamp    Timestamp
 ```
 
 ---
 
-# 4. Kafka
+# 7. Producer
 
-Kafka läuft lokal als Docker-Container.
+Der Producer erzeugt Testdaten und schreibt diese nach Kafka.
 
-Container:
+Start beispielsweise:
 
-```text
-ecommerce-kafka
+```bash
+python3 producer/producer.py
 ```
 
-Externer Port:
+Falls das Kafka-Python-Modul fehlt:
 
-```text
-9092
+```bash
+pip install kafka-python
 ```
 
-Interne Kommunikation innerhalb des Docker-Netzwerks:
+oder über die vorhandenen Requirements:
 
-```text
-kafka:29092
+```bash
+pip install -r producer/requirements.txt
 ```
+
+Der Producer muss Kafka erreichen können.
 
 ---
 
-## Kafka Topic
+# 8. Spark Structured Streaming
 
-Das verwendete Topic ist:
+Spark liest den Kafka-Topic:
 
 ```text
 ecommerce-events
 ```
 
-Aktueller Aufbau:
+Innerhalb des Docker-Netzwerks wird Kafka über:
 
 ```text
-Partitions:         3
-Replication Factor: 1
+kafka:29092
 ```
 
-Topic überprüfen:
+angesprochen.
 
-```bash
-sudo docker exec ecommerce-kafka \
-  /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --describe \
-  --topic ecommerce-events
-```
-
-Erwartete Struktur:
-
-```text
-Partition 0
-Partition 1
-Partition 2
-```
-
-Topic auflisten:
-
-```bash
-sudo docker exec ecommerce-kafka \
-  /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --list
-```
-
-Kafka Topics bilden den zentralen Event-Stream zwischen Producer und den verschiedenen Konsumenten.
+Spark verarbeitet den JSON-Stream und wandelt die Events in strukturierte Daten um.
 
 ---
 
-# 5. Redis
+# 9. Revenue-Berechnung
 
-Redis wird für die **aktuellen Live-Metriken** verwendet.
+Der Umsatz wird anhand des Event-Typs berechnet.
 
-Container:
-
-```text
-ecommerce-redis
-```
-
-Port:
+Für einen Kauf:
 
 ```text
-6379
+purchase -> +amount
 ```
 
-Redis wird innerhalb des Docker-Netzwerks über:
+Für eine Rückerstattung:
 
 ```text
-redis:6379
+refund -> -amount
 ```
 
-erreicht.
+Alle anderen Events:
+
+```text
+view_product -> 0
+add_to_cart  -> 0
+```
+
+Beispiel:
+
+```text
+purchase  999.99
+refund    149.99
+```
+
+ergibt:
+
+```text
+revenue = 849.99
+```
+
+---
+
+# 10. Zeitfenster
+
+Spark aggregiert die Daten aktuell in:
+
+```text
+1-Minute Windows
+```
+
+Beispiel:
+
+```text
+13:50:00 - 13:51:00
+13:51:00 - 13:52:00
+13:52:00 - 13:53:00
+```
+
+Dadurch entstehen fortlaufende Echtzeitmetriken.
+
+Beispiel:
+
+```text
+window_start        window_end          revenue   orders  events  unique_users
+2026-08-29 13:50:00 2026-08-29 13:51:00 4030.06   23      88      85
+2026-08-29 13:51:00 2026-08-29 13:52:00 2369.99   26      100     99
+```
+
+---
+
+# 11. Unique Users
+
+Spark Structured Streaming unterstützt in dieser Konfiguration keine normale:
+
+```python
+countDistinct()
+```
+
+Aggregation.
+
+Daher wird:
+
+```python
+approx_count_distinct()
+```
+
+verwendet.
+
+Das liefert eine effiziente Näherung der Anzahl unterschiedlicher Benutzer und funktioniert für den Streaming-Anwendungsfall.
+
+---
+
+# 12. Redis
+
+Redis speichert die aktuell berechneten Metriken.
+
+Der verwendete Redis-Key ist:
+
+```text
+ecommerce:metrics
+```
+
+Die Werte enthalten beispielsweise:
+
+```text
+revenue
+orders
+events
+unique_users
+window_start
+window_end
+```
+
+---
+
+# 13. Redis testen
 
 Verbindung testen:
 
@@ -218,17 +449,7 @@ Erwartete Ausgabe:
 PONG
 ```
 
----
-
-## Aktuelle Redis-Metriken
-
-Die Metriken werden unter folgendem Redis-Key gespeichert:
-
-```text
-ecommerce:metrics
-```
-
-Auslesen:
+Metriken anzeigen:
 
 ```bash
 sudo docker exec ecommerce-redis \
@@ -240,323 +461,27 @@ Beispiel:
 ```text
 revenue
 -459.93000000000006
-
 orders
 4
-
 events
 37
-
 unique_users
 38
-
 window_start
 2026-08-29 14:05:00
-
 window_end
 2026-08-29 14:06:00
 ```
 
-Redis dient dabei nicht als historischer Data Lake.
-
-Es ist der schnelle **Serving Layer für das Live-Dashboard**.
+Damit lässt sich überprüfen, ob Spark erfolgreich nach Redis schreibt.
 
 ---
 
-# 6. Spark Structured Streaming
+# 14. Dashboard
 
-Spark verarbeitet die Events aus Kafka.
+Das Dashboard stellt die Redis-Metriken über eine Weboberfläche dar.
 
-Container:
-
-```text
-ecommerce-spark
-```
-
-Die Anwendung befindet sich im Container unter:
-
-```text
-/opt/spark/streaming.py
-```
-
-Kafka-Verbindung:
-
-```text
-kafka:29092
-```
-
-Topic:
-
-```text
-ecommerce-events
-```
-
----
-
-## Spark Pipeline
-
-Der Stream wird grundsätzlich wie folgt verarbeitet:
-
-```text
-Kafka
-  │
-  ▼
-Raw Kafka Value
-  │
-  ▼
-JSON
-  │
-  ▼
-Structured Event
-  │
-  ▼
-Revenue Calculation
-  │
-  ▼
-1 Minute Window
-  │
-  ▼
-Aggregations
-  │
-  ▼
-Redis
-```
-
----
-
-# 7. Event Schema
-
-Spark verwendet folgendes Schema:
-
-| Feld       | Typ       | Beschreibung         |
-| ---------- | --------- | -------------------- |
-| event_id   | String    | Eindeutige Event-ID  |
-| user_id    | Integer   | Benutzer-ID          |
-| product_id | Integer   | Produkt-ID           |
-| event_type | String    | Art des Events       |
-| amount     | Double    | Betrag               |
-| timestamp  | Timestamp | Zeitpunkt des Events |
-
----
-
-# 8. Revenue Calculation
-
-Der Umsatz wird abhängig vom Event-Typ berechnet.
-
-Bei einem Kauf:
-
-```text
-purchase → +amount
-```
-
-Bei einer Rückerstattung:
-
-```text
-refund → -amount
-```
-
-Alle anderen Events:
-
-```text
-view_product → 0
-add_to_cart → 0
-```
-
-Beispiel:
-
-```text
-purchase  999.99
-refund    -149.99
-view      0
-cart      0
-```
-
-Dadurch entsteht ein Net-Revenue-Wert.
-
----
-
-# 9. Window Aggregation
-
-Spark aggregiert die Events in:
-
-```text
-1-Minute Windows
-```
-
-Dabei werden aktuell folgende Kennzahlen berechnet:
-
-```text
-revenue
-orders
-events
-unique_users
-```
-
-Beispiel:
-
-```text
-window_start        2026-08-29 13:50:00
-window_end          2026-08-29 13:51:00
-
-revenue             4030.06
-orders              23
-events              88
-unique_users        85
-```
-
----
-
-## Unique Users
-
-Eine exakte `countDistinct()`-Aggregation wird in dieser Streaming-Konfiguration nicht verwendet, da Spark für diese Streaming-Aggregation eine Distinct-Aggregation ablehnt.
-
-Stattdessen wird:
-
-```python
-approx_count_distinct()
-```
-
-verwendet.
-
-Dadurch erhalten wir eine effiziente Approximation der Anzahl eindeutiger User.
-
----
-
-# 10. Spark → Redis
-
-Die aggregierten Ergebnisse werden über `foreachBatch()` an Redis übertragen.
-
-Vereinfacht:
-
-```text
-Spark Batch
-     │
-     ▼
-Aggregation
-     │
-     ▼
-foreachBatch()
-     │
-     ▼
-Redis
-```
-
-Redis speichert die aktuell relevanten Kennzahlen für das Dashboard.
-
----
-
-# 11. Docker
-
-Die lokale Infrastruktur wird über Docker Compose gestartet.
-
-Typische Services:
-
-```text
-ecommerce-kafka
-ecommerce-redis
-ecommerce-spark
-ecommerce-dashboard
-```
-
-Status überprüfen:
-
-```bash
-sudo docker compose ps
-```
-
-Logs anzeigen:
-
-```bash
-sudo docker compose logs --tail=50 spark
-```
-
-Kafka:
-
-```bash
-sudo docker compose logs --tail=50 kafka
-```
-
-Redis:
-
-```bash
-sudo docker compose logs --tail=50 redis
-```
-
-Dashboard:
-
-```bash
-sudo docker compose logs --tail=50 dashboard
-```
-
----
-
-# 12. Docker Network
-
-Die Services kommunizieren über das Compose-Netzwerk:
-
-```text
-realtime-ecommerce-platform_default
-```
-
-Netzwerk überprüfen:
-
-```bash
-sudo docker network inspect realtime-ecommerce-platform_default
-```
-
-Beispielhafte Container:
-
-```text
-ecommerce-kafka
-ecommerce-spark
-ecommerce-redis
-```
-
-Innerhalb des Docker-Netzwerks werden die Service-Namen als DNS-Namen verwendet:
-
-```text
-kafka
-redis
-```
-
-Beispiel:
-
-```text
-kafka:29092
-redis:6379
-```
-
----
-
-# 13. Dashboard
-
-Das Dashboard stellt die aktuellen Metriken grafisch dar.
-
-Architektur:
-
-```text
-Redis
-  │
-  ▼
-Flask API
-  │
-  ▼
-Dashboard
-```
-
-Das Dashboard verwendet also nicht direkt Kafka.
-
-Kafka und Spark sind für die Verarbeitung zuständig.
-
-Redis stellt die bereits aggregierten Werte schnell bereit.
-
----
-
-# 14. Flask API
-
-Das Dashboard wird durch eine Flask-Anwendung versorgt.
-
-Grundsätzlich:
+Die typische Architektur ist:
 
 ```text
 Browser
@@ -566,322 +491,131 @@ Flask
    │
    ▼
 Redis
+   │
+   ▼
+ecommerce:metrics
 ```
 
-Die API liest beispielsweise:
+Das Dashboard zeigt die aktuellen Streaming-Daten beispielsweise als:
+
+* Revenue
+* Orders
+* Events
+* Unique Users
+* aktuelles Zeitfenster
+
+---
+
+# 15. API
+
+Das Flask-Backend stellt die Daten über HTTP bereit.
+
+Ein möglicher Endpoint ist beispielsweise:
+
+```text
+/api/metrics
+```
+
+Der Endpoint liest die aktuellen Daten aus:
 
 ```text
 ecommerce:metrics
 ```
 
-aus Redis.
-
-Damit bleibt die GUI unabhängig von der laufenden Spark-Verarbeitung.
-
----
-
-# 15. Databricks / Data Lakehouse
-
-Neben der lokalen Real-Time-Pipeline ist **Databricks** Bestandteil des Projekts.
-
-Der Zweck ist ein anderer als bei Redis.
-
-### Redis
-
-```text
-Live
-Fast
-Current metrics
-Dashboard
-```
-
-### Databricks
-
-```text
-Historical
-Persistent
-Analytics
-Data Lakehouse
-```
-
-Databricks kombiniert Data-Lake- und Data-Warehouse-Konzepte in einer Lakehouse-Architektur. Delta Lake stellt dabei die Storage-Schicht bereit.
-
----
-
-# 16. Medallion Architecture
-
-Die Databricks-Seite folgt der klassischen:
-
-```text
-Bronze
-   │
-   ▼
-Silver
-   │
-   ▼
-Gold
-```
-
-Databricks beschreibt Bronze als Raw-Layer, Silver als bereinigten/validierten Layer und Gold als für Analytics und Business-Anwendungen optimierten Layer.
-
----
-
-## 16.1 Bronze
-
-Bronze enthält die Rohdaten.
-
-Beispielsweise:
-
-```text
-event_id
-user_id
-product_id
-event_type
-amount
-timestamp
-```
-
-Ziel:
-
-```text
-Originaldaten erhalten
-```
-
-Die Bronze-Schicht dient damit auch als Ausgangspunkt für spätere Reprocessing- und Audit-Prozesse.
+und liefert sie als JSON zurück.
 
 Beispiel:
 
-```text
-bronze.ecommerce_events
+```json
+{
+  "revenue": -459.93,
+  "orders": 4,
+  "events": 37,
+  "unique_users": 38,
+  "window_start": "2026-08-29 14:05:00",
+  "window_end": "2026-08-29 14:06:00"
+}
 ```
 
 ---
 
-# 17. Silver
+# 16. Docker starten
 
-Silver enthält bereinigte und validierte Events.
-
-Mögliche Transformationen:
-
-```text
-Schema Validation
-      │
-      ▼
-Null Checks
-      │
-      ▼
-Type Casting
-      │
-      ▼
-Deduplication
-      │
-      ▼
-Valid Events
-```
-
-Beispielsweise werden ungültige Events entfernt oder separat behandelt.
-
-Beispiel:
-
-```text
-silver.ecommerce_events
-```
-
-Silver ist die Schicht für Datenbereinigung, Normalisierung, Deduplizierung und weitere fachliche Anreicherung.
-
----
-
-# 18. Gold
-
-Gold enthält Business-Metriken.
-
-Beispielsweise:
-
-```text
-gold.daily_revenue
-gold.product_performance
-gold.user_activity
-gold.ecommerce_metrics
-```
-
-Mögliche Kennzahlen:
-
-```text
-Revenue
-Orders
-Events
-Unique Users
-Average Order Value
-Refund Amount
-Conversion Rate
-```
-
-Gold ist für BI, Dashboards, Reporting und Business Analytics vorgesehen.
-
----
-
-# 19. Gesamtarchitektur mit Databricks
-
-Die vollständige Zielarchitektur:
-
-```text
-                    ┌──────────────────┐
-                    │ Python Producer  │
-                    └────────┬─────────┘
-                             │
-                             ▼
-                    ┌──────────────────┐
-                    │      Kafka       │
-                    │ ecommerce-events │
-                    └───────┬──────────┘
-                            │
-                 ┌──────────┴───────────┐
-                 │                      │
-                 ▼                      ▼
-        ┌─────────────────┐    ┌─────────────────────┐
-        │ Spark Streaming │    │     Databricks      │
-        │                 │    │                     │
-        │ Real-Time       │    │ Bronze              │
-        │ Processing      │    │   ↓                 │
-        └────────┬────────┘    │ Silver              │
-                 │             │   ↓                 │
-                 ▼             │ Gold                │
-        ┌─────────────────┐    └─────────────────────┘
-        │      Redis      │
-        │   Live Metrics  │
-        └────────┬────────┘
-                 │
-                 ▼
-        ┌─────────────────┐
-        │ Flask API        │
-        └────────┬────────┘
-                 │
-                 ▼
-        ┌─────────────────┐
-        │    Dashboard    │
-        └─────────────────┘
-```
-
----
-
-# 20. Warum zwei Datenpfade?
-
-Das Projekt verwendet bewusst zwei unterschiedliche Pfade.
-
-## Real-Time Path
-
-```text
-Kafka
- ↓
-Spark
- ↓
-Redis
- ↓
-Dashboard
-```
-
-Ziel:
-
-```text
-Niedrige Latenz
-Live-Metriken
-Monitoring
-```
-
-## Data Lake Path
-
-```text
-Kafka / Events
- ↓
-Databricks
- ↓
-Bronze
- ↓
-Silver
- ↓
-Gold
-```
-
-Ziel:
-
-```text
-Historische Daten
-Reprocessing
-Analytics
-Reporting
-Data Science
-```
-
-Diese Trennung entspricht dem Grundgedanken einer Lakehouse-Architektur: Streaming und Batch können auf einer gemeinsamen persistenten Datenbasis aufbauen. Delta Lake ist speziell auf die Zusammenarbeit mit Spark und Structured Streaming ausgelegt.
-
----
-
-# 21. Projektstruktur
-
-Die aktuelle Struktur kann beispielsweise so aussehen:
-
-```text
-realtime-ecommerce-platform/
-│
-├── producer/
-│   └── producer.py
-│
-├── spark/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── streaming.py
-│
-├── dashboard/
-│   ├── app.py
-│   ├── templates/
-│   │   └── index.html
-│   └── static/
-│       ├── css/
-│       └── js/
-│
-├── databricks/
-│   ├── bronze/
-│   ├── silver/
-│   └── gold/
-│
-├── docker-compose.yml
-│
-└── README.md
-```
-
-Die tatsächlichen Dateinamen können abhängig vom aktuellen Repository leicht abweichen.
-
----
-
-# 22. Starten der lokalen Pipeline
-
-Zuerst die Docker-Infrastruktur starten:
+Alle Services starten:
 
 ```bash
-sudo docker compose up -d kafka redis
+sudo docker compose up -d
 ```
 
-Danach prüfen:
+Status prüfen:
 
 ```bash
 sudo docker compose ps
 ```
 
-Kafka sollte laufen:
+Beispiel:
 
 ```text
-ecommerce-kafka    Up
-```
-
-Redis:
-
-```text
-ecommerce-redis   Up
+NAME                 SERVICE     STATUS
+ecommerce-kafka      kafka       Up
+ecommerce-redis      redis       Up
+ecommerce-spark      spark       Up
+ecommerce-dashboard  dashboard   Up
 ```
 
 ---
 
-# 23. Kafka Topic überprüfen
+# 17. Logs prüfen
+
+### Kafka
+
+```bash
+sudo docker compose logs --tail=100 kafka
+```
+
+### Redis
+
+```bash
+sudo docker compose logs --tail=100 redis
+```
+
+### Spark
+
+```bash
+sudo docker compose logs --tail=100 spark
+```
+
+### Dashboard
+
+```bash
+sudo docker compose logs --tail=100 dashboard
+```
+
+Live-Logs:
+
+```bash
+sudo docker compose logs -f spark
+```
+
+---
+
+# 18. Debugging der Pipeline
+
+Die Pipeline sollte beim Debugging von links nach rechts überprüft werden.
+
+## Schritt 1 – Container
+
+```bash
+sudo docker compose ps
+```
+
+Alle benötigten Container müssen laufen.
+
+---
+
+## Schritt 2 – Kafka
+
+Topic prüfen:
 
 ```bash
 sudo docker exec ecommerce-kafka \
@@ -890,66 +624,41 @@ sudo docker exec ecommerce-kafka \
   --list
 ```
 
-Erwartet:
+Es muss erscheinen:
 
 ```text
 ecommerce-events
 ```
 
-Details:
+---
+
+## Schritt 3 – Producer
+
+Producer starten:
 
 ```bash
-sudo docker exec ecommerce-kafka \
-  /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --describe \
-  --topic ecommerce-events
+python3 producer/producer.py
 ```
+
+Es müssen Events erzeugt werden.
 
 ---
 
-# 24. Redis überprüfen
+## Schritt 4 – Spark
 
-```bash
-sudo docker exec ecommerce-redis redis-cli ping
-```
-
-Erwartet:
-
-```text
-PONG
-```
-
-Danach:
-
-```bash
-sudo docker exec ecommerce-redis \
-  redis-cli HGETALL ecommerce:metrics
-```
-
----
-
-# 25. Spark starten
-
-Spark starten:
-
-```bash
-sudo docker compose up -d spark
-```
-
-Logs:
+Logs beobachten:
 
 ```bash
 sudo docker compose logs -f spark
 ```
 
-Wenn Spark korrekt läuft, erscheinen Batches wie:
+Erwartet werden Batches wie:
 
 ```text
 Spark Batch: 80
 ```
 
-und anschließend:
+mit Daten:
 
 ```text
 window_start
@@ -962,61 +671,151 @@ unique_users
 
 ---
 
-# 26. Producer starten
+## Schritt 5 – Redis
 
-Falls der Producer lokal läuft:
+Redis testen:
 
 ```bash
-python3 producer.py
+sudo docker exec ecommerce-redis redis-cli ping
 ```
 
-Falls das Modul Kafka benötigt:
+Danach:
+
+```bash
+sudo docker exec ecommerce-redis \
+  redis-cli HGETALL ecommerce:metrics
+```
+
+Wenn dort Werte vorhanden sind, funktioniert die Verarbeitungskette:
+
+```text
+Producer
+   ↓
+Kafka
+   ↓
+Spark
+   ↓
+Redis
+```
+
+---
+
+## Schritt 6 – Dashboard
+
+Danach das Dashboard im Browser öffnen und überprüfen, ob die Redis-Werte angezeigt werden.
+
+---
+
+# 19. Docker Network
+
+Die Services müssen sich innerhalb desselben Docker-Netzwerks befinden.
+
+Aktuell verwendet Docker Compose beispielsweise:
+
+```text
+realtime-ecommerce-platform_default
+```
+
+Netzwerk anzeigen:
+
+```bash
+sudo docker network ls
+```
+
+Details:
+
+```bash
+sudo docker network inspect realtime-ecommerce-platform_default
+```
+
+Kafka und Spark sollten dort gemeinsam vorhanden sein.
+
+Redis muss ebenfalls mit diesem Netzwerk verbunden sein, damit Spark:
+
+```text
+redis:6379
+```
+
+erreichen kann.
+
+---
+
+# 20. Typische Fehler
+
+## `ModuleNotFoundError: No module named 'kafka'`
+
+Der Producer benötigt:
+
+```text
+kafka-python
+```
+
+Installation:
 
 ```bash
 pip install kafka-python
 ```
 
-Anschließend sollte der Producer Events an Kafka senden.
-
 ---
 
-# 27. End-to-End-Test
+## `countDistinct` wird von Streaming nicht unterstützt
 
-Die komplette Pipeline kann folgendermaßen getestet werden:
+Fehler:
 
 ```text
-1. Kafka starten
-2. Redis starten
-3. Spark starten
-4. Dashboard starten
-5. Producer starten
-6. Kafka Events prüfen
-7. Spark Logs prüfen
-8. Redis prüfen
-9. Dashboard öffnen
+Distinct aggregations are not supported on streaming DataFrames/Datasets
+```
+
+Lösung:
+
+```python
+approx_count_distinct("user_id")
+```
+
+anstatt:
+
+```python
+countDistinct("user_id")
 ```
 
 ---
 
-# 28. Debugging
+## Redis kann nicht aufgelöst werden
 
-## Docker läuft nicht
+Fehler:
+
+```text
+Temporary failure in name resolution
+```
+
+Dann prüfen:
 
 ```bash
-sudo docker compose ps
+sudo docker network inspect realtime-ecommerce-platform_default
 ```
 
----
+und sicherstellen, dass Spark und Redis im selben Docker-Netzwerk sind.
 
-## Kafka läuft nicht
+Verbindung aus Spark testen:
 
 ```bash
-sudo docker compose logs --tail=100 kafka
+sudo docker exec ecommerce-spark \
+  python3 -c "import socket; print(socket.gethostbyname('redis')); print(socket.create_connection(('redis',6379,5)))"
 ```
+
+Wenn eine IP-Adresse und ein Socket ausgegeben werden, funktioniert die Netzwerkverbindung.
 
 ---
 
-## Kafka Topic fehlt
+## Kafka `UnknownTopicOrPartitionException`
+
+Fehler:
+
+```text
+UnknownTopicOrPartitionException
+```
+
+Topic prüfen:
 
 ```bash
 sudo docker exec ecommerce-kafka \
@@ -1025,7 +824,7 @@ sudo docker exec ecommerce-kafka \
   --list
 ```
 
-Topic erstellen:
+Falls der Topic fehlt:
 
 ```bash
 sudo docker exec ecommerce-kafka \
@@ -1037,236 +836,87 @@ sudo docker exec ecommerce-kafka \
   --replication-factor 1
 ```
 
----
-
-## Spark startet nicht
-
-```bash
-sudo docker compose logs --tail=100 spark
-```
-
-Bei Änderungen an `streaming.py` das Image neu bauen:
-
-```bash
-sudo docker compose build spark
-```
-
 Danach:
 
 ```bash
-sudo docker compose up -d spark
+sudo docker compose restart spark
 ```
 
 ---
 
-## Prüfen, welche streaming.py wirklich im Image liegt
+# 21. Data Lake / Databricks
 
-```bash
-sudo docker run --rm \
-  realtime-ecommerce-platform-spark \
-  grep -n "approx_count_distinct\|countDistinct" \
-  /opt/spark/streaming.py
-```
+Neben der Realtime-Pipeline ist **Databricks** für die historische Speicherung und Analyse vorgesehen.
 
-Damit kann ausgeschlossen werden, dass ein altes Docker-Image verwendet wird.
-
----
-
-# 29. Redis-Verbindung aus Spark testen
-
-Wenn Redis aus Spark nicht erreichbar ist:
-
-```bash
-sudo docker exec ecommerce-spark \
-  python3 -c \
-  "import socket; print(socket.gethostbyname('redis')); print(socket.create_connection(('redis',6379,5)))"
-```
-
-Eine erfolgreiche Verbindung sieht beispielsweise so aus:
+Die Architektur kann dadurch um eine Data-Lake-Schicht erweitert werden:
 
 ```text
-172.19.0.x
-<socket.socket ...>
-```
-
-Wichtig ist:
-
-```text
-redis
-```
-
-als Hostname zu verwenden.
-
-Nicht:
-
-```text
-localhost
-```
-
-Denn `localhost` innerhalb des Spark-Containers zeigt auf den Spark-Container selbst.
-
----
-
-# 30. Kafka-Verbindungsproblem
-
-Spark verwendet innerhalb von Docker:
-
-```text
-kafka:29092
-```
-
-Nicht:
-
-```text
-localhost:9092
-```
-
-`localhost:9092` ist für Zugriffe vom Host gedacht.
-
-Innerhalb des Compose-Netzwerks gilt:
-
-```text
-Spark → kafka:29092
-```
-
-Vom Host:
-
-```text
-Host → localhost:9092
+                         Realtime Layer
+                              │
+                              ▼
+Producer → Kafka → Spark Streaming → Redis → Dashboard
+                  │
+                  │
+                  ▼
+             Data Lake
+                  │
+                  ▼
+              Databricks
+                  │
+        ┌─────────┼─────────┐
+        ▼         ▼         ▼
+      SQL       BI        ML
 ```
 
 ---
 
-# 31. UnknownTopicOrPartitionException
+# 22. Zielarchitektur mit Data Lake
 
-Wenn Spark meldet:
-
-```text
-UnknownTopicOrPartitionException
-```
-
-zuerst prüfen:
-
-```bash
-sudo docker exec ecommerce-kafka \
-  /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --list
-```
-
-Danach:
-
-```bash
-sudo docker exec ecommerce-kafka \
-  /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --describe \
-  --topic ecommerce-events
-```
-
-Es sollten alle drei Partitionen vorhanden sein:
+Eine langfristige Architektur sieht beispielsweise so aus:
 
 ```text
-Partition 0
-Partition 1
-Partition 2
+                     ┌───────────────┐
+                     │    Producer   │
+                     └───────┬───────┘
+                             │
+                             ▼
+                     ┌───────────────┐
+                     │     Kafka     │
+                     └───────┬───────┘
+                             │
+                 ┌───────────┴───────────┐
+                 │                       │
+                 ▼                       ▼
+        ┌────────────────┐       ┌────────────────┐
+        │ Spark Streaming│       │   Data Lake    │
+        │                │       │                │
+        │ Realtime       │       │ Raw Events     │
+        │ Aggregation    │       │ Historical     │
+        └───────┬────────┘       └───────┬────────┘
+                │                        │
+                ▼                        ▼
+        ┌────────────────┐       ┌────────────────┐
+        │     Redis      │       │   Databricks   │
+        │                │       │                │
+        │ Realtime       │       │ Delta Lake     │
+        │ Metrics        │       │ Analytics      │
+        └───────┬────────┘       │ ML / BI        │
+                │                └────────────────┘
+                ▼
+        ┌────────────────┐
+        │   Dashboard    │
+        └────────────────┘
 ```
 
 ---
 
-# 32. Spark Streaming Checkpoint
+# 23. Bronze / Silver / Gold
 
-Spark verwendet einen Checkpoint:
+Für die Data-Lake-Schicht bietet sich eine klassische Medallion Architecture an.
 
-```text
-/tmp/checkpoints/ecommerce
-```
+## Bronze
 
-Der Checkpoint ermöglicht Spark Structured Streaming, den Streaming-Zustand und Fortschritt zu verwalten.
-
-Wenn bei einer Entwicklungsänderung ein komplett neuer Streaming-Zustand benötigt wird, kann der alte Checkpoint entfernt werden.
-
-Beispielsweise:
-
-```bash
-sudo docker compose down
-```
-
-und anschließend den verwendeten Checkpoint je nach Volume-/Container-Konfiguration löschen.
-
-**Achtung:** Checkpoints nicht während einer laufenden produktiven Pipeline löschen.
-
----
-
-# 33. Dashboard Debugging
-
-Dashboard-Container prüfen:
-
-```bash
-sudo docker compose ps
-```
-
-Logs:
-
-```bash
-sudo docker compose logs --tail=100 dashboard
-```
-
-API testen:
-
-```bash
-curl http://localhost:5000/
-```
-
-Eine konkrete API-Route muss exakt mit der in `app.py` definierten Route übereinstimmen.
-
-Beispielsweise ist:
-
-```bash
-curl http://localhost:5000/api/history
-```
-
-nur dann gültig, wenn `/api/history` tatsächlich in der aktuellen Flask-Anwendung definiert ist.
-
----
-
-# 34. Databricks Pipeline
-
-Die Databricks-Pipeline soll langfristig folgende Verarbeitung abbilden:
-
-```text
-Kafka / Raw Events
-       │
-       ▼
-   BRONZE
-       │
-       ▼
-   SILVER
-       │
-       ▼
-    GOLD
-       │
-       ├────────► BI
-       ├────────► SQL
-       ├────────► Dashboard
-       └────────► Data Science
-```
-
-Databricks empfiehlt die Trennung von Ingestion und Transformation, sodass Fehler in nachgelagerten Transformationen nicht verhindern, dass Rohdaten weiterhin in Bronze landen.
-
----
-
-# 35. Bronze-Ziel
-
-Bronze soll möglichst nah an den ursprünglichen Events bleiben.
-
-Beispiel:
-
-```text
-bronze.ecommerce_events
-```
-
-Spalten:
+Rohdaten aus Kafka:
 
 ```text
 event_id
@@ -1275,265 +925,242 @@ product_id
 event_type
 amount
 timestamp
-_ingest_timestamp
-_source
 ```
 
-Zusätzliche Metadaten sind sinnvoll, um Herkunft und Verarbeitung nachvollziehbar zu machen.
+Die Daten werden möglichst unverändert gespeichert.
 
 ---
 
-# 36. Silver-Ziel
+## Silver
 
-Silver verarbeitet die Rohdaten:
+Bereinigte und normalisierte Events.
 
-```text
-bronze.ecommerce_events
-          │
-          ▼
-     Validation
-          │
-          ▼
-     Deduplication
-          │
-          ▼
-     Type Cleaning
-          │
-          ▼
-silver.ecommerce_events
-```
+Beispielsweise:
 
-Mögliche zusätzliche Spalten:
-
-```text
-revenue
-event_date
-event_hour
-is_purchase
-is_refund
-```
+* Validierung
+* Datentypen
+* Bereinigung fehlerhafter Events
+* Zeitstempel-Normalisierung
+* Deduplication
 
 ---
 
-# 37. Gold-Ziel
+## Gold
 
-Gold enthält die Business-Metriken.
+Business-Aggregationen.
 
-Beispiel:
-
-```text
-gold.ecommerce_daily
-```
-
-mit:
+Beispielsweise:
 
 ```text
-date
-revenue
-orders
-events
-unique_users
-refunds
-refund_amount
-average_order_value
+daily_revenue
+daily_orders
+product_revenue
+customer_activity
+conversion_rate
+refund_rate
 ```
 
-Weitere mögliche Tabellen:
-
-```text
-gold.product_performance
-gold.user_activity
-gold.hourly_metrics
-gold.event_type_metrics
-```
+Diese Schicht kann anschließend für BI, Reporting und Machine Learning verwendet werden.
 
 ---
 
-# 38. Delta Lake
+# 24. Realtime vs. Historical Analytics
 
-Die Databricks-Tabellen werden als Delta Tables aufgebaut.
+Das Projekt trennt zwei unterschiedliche Anforderungen.
 
-Delta Lake bietet unter anderem ACID-Transaktionen und ist eng mit Apache Spark und Structured Streaming integriert.
-
-Dadurch kann die Plattform sowohl Streaming- als auch Batch-Verarbeitung auf derselben persistenten Datenbasis verwenden.
-
----
-
-# 39. Aktueller Status
-
-## Fertig / funktionierend
-
-* [x] Python Event Producer
-* [x] Apache Kafka
-* [x] Kafka Topic `ecommerce-events`
-* [x] 3 Kafka Partitionen
-* [x] Redis
-* [x] Spark Structured Streaming
-* [x] JSON Event Parsing
-* [x] Revenue Calculation
-* [x] Purchase Counting
-* [x] Event Counting
-* [x] Approximate Unique Users
-* [x] 1-Minute Window Aggregation
-* [x] Spark → Redis
-* [x] Docker Compose
-* [x] Flask Backend
-* [x] Dashboard
-* [x] Live Metrics
-* [x] Databricks als Lakehouse-Komponente
-* [x] Bronze/Silver/Gold Architektur
-
----
-
-# 40. Noch auszubauen
-
-Folgende Punkte sind sinnvolle nächste Schritte:
-
-* [ ] Kafka → Databricks produktiv anbinden
-* [ ] Bronze Delta Table
-* [ ] Silver Cleaning Pipeline
-* [ ] Gold Business Metrics
-* [ ] Databricks Jobs / Workflows
-* [ ] Unity Catalog
-* [ ] Data Quality Checks
-* [ ] Dead-Letter-/Quarantine-Layer
-* [ ] Historische Dashboard-Daten
-* [ ] Authentication für API
-* [ ] Monitoring
-* [ ] Tests
-* [ ] CI/CD
-* [ ] Cloud Deployment
-
-Databricks empfiehlt für produktive Umgebungen unter anderem eine klare Storage-, Compute-, Governance- und Observability-Strategie.
-
----
-
-# 41. Zielbild
-
-Das langfristige Ziel des Projekts ist eine vollständige Data-Engineering-Plattform:
+### Realtime
 
 ```text
-                    E-COMMERCE EVENTS
-                           │
-                           ▼
-                    ┌──────────────┐
-                    │    KAFKA     │
-                    └──────┬───────┘
-                           │
-              ┌────────────┴────────────┐
-              │                         │
-              ▼                         ▼
-       REAL-TIME PATH             DATA LAKE PATH
-              │                         │
-              ▼                         ▼
-           SPARK                  DATABRICKS
-              │                         │
-              ▼                         ▼
-           REDIS                    BRONZE
-              │                         │
-              ▼                         ▼
-         FLASK API                  SILVER
-              │                         │
-              ▼                         ▼
-         DASHBOARD                    GOLD
-                                        │
-                         ┌──────────────┼──────────────┐
-                         ▼              ▼              ▼
-                        BI          Analytics       ML/DS
-```
-
-Damit deckt das Projekt die wesentlichen Bereiche einer modernen Data-Engineering-Plattform ab:
-
-```text
-Event Generation
-        ↓
-Event Streaming
-        ↓
-Real-Time Processing
-        ↓
-Caching / Serving
-        ↓
-API
-        ↓
-Visualization
-        ↓
-Data Lakehouse
-        ↓
-Data Transformation
-        ↓
-Analytics
-```
-
----
-
-# 42. Wichtige Architekturentscheidung
-
-Redis und Databricks haben unterschiedliche Aufgaben und sollten nicht miteinander verwechselt werden.
-
-```text
-Redis
-→ kurzfristig
-→ schnell
-→ Live Dashboard
-→ aktuelle Metriken
-```
-
-```text
-Databricks / Delta Lake
-→ langfristig
-→ historisch
-→ reproduzierbar
-→ analytisch
-→ Data Science / BI
-```
-
-Die eigentliche historische Quelle der Wahrheit soll perspektivisch im Lakehouse liegen, während Redis als schneller Serving Layer für die Live-Anwendung dient.
-
----
-
-# 43. Zusammenfassung
-
-Das Projekt ist eine lokale, containerisierte Real-Time-E-Commerce-Plattform mit einer zusätzlichen Databricks-Lakehouse-Schicht.
-
-Die lokale Pipeline:
-
-```text
-Python
-  ↓
 Kafka
   ↓
-Spark
+Spark Streaming
   ↓
 Redis
-  ↓
-Flask
   ↓
 Dashboard
 ```
 
-Die analytische Pipeline:
+Ziel:
 
 ```text
-Events
-  ↓
-Databricks
-  ↓
-Bronze
-  ↓
-Silver
-  ↓
-Gold
+Sekunden-/Minutenbereich
 ```
 
-Damit entsteht eine Architektur, die sowohl **Real-Time Analytics** als auch **historische Data-Lake-/Lakehouse-Verarbeitung** unterstützt.
+Beispielsweise:
+
+* aktueller Umsatz
+* aktuelle Orders
+* aktuelle Events
+* aktive User
+
+### Historical
+
+```text
+Kafka / Batch
+    ↓
+Data Lake
+    ↓
+Databricks
+    ↓
+Delta Lake
+    ↓
+Analytics / BI / ML
+```
+
+Ziel:
+
+```text
+Tage / Monate / Jahre
+```
+
+Beispielsweise:
+
+* Umsatzentwicklung
+* Kundenverhalten
+* Produktanalyse
+* Churn
+* Forecasting
 
 ---
 
-## Technische Referenzen
+# 25. Aktueller Projektstand
 
-* Apache Kafka: https://kafka.apache.org/
-* Apache Spark: https://spark.apache.org/
-* Databricks Lakehouse: https://docs.databricks.com/
-* Delta Lake: https://docs.databricks.com/aws/en/delta
-* Databricks Medallion Architecture: https://docs.databricks.com/gcp/en/lakehouse/medallion
+Die Realtime-Pipeline ist aktuell funktionsfähig:
+
+```text
+Producer
+   ↓
+Kafka
+   ↓
+Spark Structured Streaming
+   ↓
+Redis
+   ↓
+Dashboard
+```
+
+Kafka empfängt Events.
+
+Spark verarbeitet die Events in 1-Minuten-Fenstern.
+
+Redis speichert die aktuellen Metriken.
+
+Das Dashboard visualisiert diese Daten.
+
+Die Data-Lake-/Databricks-Schicht bildet die nächste Erweiterungsstufe für historische Daten und Analytics.
+
+---
+
+# 26. Empfohlene nächste Schritte
+
+## 1. Dashboard vervollständigen
+
+Das Dashboard kann erweitert werden um:
+
+* Revenue Chart
+* Orders Chart
+* Events pro Minute
+* User Aktivität
+* Event-Type-Verteilung
+* automatische Aktualisierung
+
+---
+
+## 2. Historische Metriken speichern
+
+Aktuell wird primär der aktuelle Redis-Zustand verwendet.
+
+Als nächster Schritt können historische Aggregationen gespeichert werden.
+
+Beispielsweise:
+
+```text
+realtime metrics
+        +
+historical metrics
+```
+
+---
+
+## 3. Data Lake integrieren
+
+Kafka-/Spark-Daten können zusätzlich in einen Data Lake geschrieben werden.
+
+Beispielsweise:
+
+```text
+Kafka
+  ↓
+Spark
+  ↓
+Delta Lake
+```
+
+---
+
+## 4. Databricks Analytics
+
+Danach können Databricks Jobs und Notebooks verwendet werden für:
+
+* SQL Analytics
+* historische Reports
+* Dashboards
+* Produktanalyse
+* Kundenanalyse
+* Forecasting
+* Machine Learning
+
+---
+
+# 27. Ziel des Projekts
+
+Das Projekt soll eine realitätsnahe Data-Engineering-Plattform demonstrieren, die mehrere wichtige Bereiche kombiniert:
+
+```text
+Event Generation
+       ↓
+Streaming
+       ↓
+Distributed Processing
+       ↓
+Realtime Storage
+       ↓
+API
+       ↓
+Visualization
+       ↓
+Data Lake
+       ↓
+Analytics
+       ↓
+Machine Learning
+```
+
+Damit entsteht aus einem einfachen E-Commerce-Event-Generator schrittweise eine vollständige moderne **Realtime- und Data-Lake-Plattform**.
+
+---
+
+# 28. Kurzfassung
+
+```text
+Python Producer
+      │
+      ▼
+    Kafka
+      │
+      ▼
+Spark Structured Streaming
+      │
+      ├──────────────► Data Lake / Databricks
+      │
+      ▼
+    Redis
+      │
+      ▼
+ Flask Dashboard
+```
+
+**Realtime:** Kafka → Spark → Redis → Dashboard
+
+**Historical Analytics:** Kafka/Spark → Data Lake → Databricks → BI/ML
 
