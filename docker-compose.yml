@@ -10,6 +10,9 @@ services:
 
     depends_on:
       - kafka
+    volumes:
+     - ./databricks:/opt/spark/databricks
+     - ./databricks/data:/opt/spark/data
 
   kafka:
     image: apache/kafka:latest

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>E-Commerce Realtime Dashboard</title>
+    <title>Realtime E-Commerce Dashboard</title>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -38,6 +38,11 @@
             font-size: 28px;
         }
 
+        .subtitle {
+            color: #94a3b8;
+            margin-top: 6px;
+        }
+
         .status {
             display: flex;
             align-items: center;
@@ -51,6 +56,10 @@
             height: 10px;
             border-radius: 50%;
             background: #22c55e;
+        }
+
+        .dot.offline {
+            background: #ef4444;
         }
 
         .cards {
@@ -76,6 +85,12 @@
         .card-value {
             font-size: 30px;
             font-weight: bold;
+        }
+
+        .card-subtitle {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #64748b;
         }
 
         .charts {
@@ -109,6 +124,12 @@
             background: #450a0a;
             border: 1px solid #7f1d1d;
             color: #fecaca;
+        }
+
+        .info {
+            margin-top: 25px;
+            color: #64748b;
+            font-size: 12px;
         }
 
         @media (max-width: 900px) {
@@ -146,20 +167,25 @@
     <header>
         <div>
             <h1>Realtime E-Commerce</h1>
-            <div style="color:#94a3b8; margin-top:6px;">
-                Kafka → Spark → Redis
+
+            <div class="subtitle">
+                Kafka → Spark Structured Streaming → Delta Lake → Redis
             </div>
         </div>
 
         <div class="status">
             <span class="dot" id="statusDot"></span>
-            <span id="statusText">Live</span>
+            <span id="statusText">Connecting...</span>
         </div>
     </header>
 
+
     <div class="error" id="errorBox"></div>
 
-    <!-- KPI CARDS -->
+
+    <!-- =====================================================
+         KPI CARDS
+         ===================================================== -->
 
     <div class="cards">
 
@@ -171,7 +197,12 @@
             <div class="card-value" id="revenue">
                 €0.00
             </div>
+
+            <div class="card-subtitle">
+                Current window
+            </div>
         </div>
+
 
         <div class="card">
             <div class="card-title">
@@ -181,7 +212,12 @@
             <div class="card-value" id="orders">
                 0
             </div>
+
+            <div class="card-subtitle">
+                Purchases
+            </div>
         </div>
+
 
         <div class="card">
             <div class="card-title">
@@ -191,42 +227,67 @@
             <div class="card-value" id="events">
                 0
             </div>
+
+            <div class="card-subtitle">
+                Total events
+            </div>
         </div>
+
 
         <div class="card">
             <div class="card-title">
                 Unique Users
             </div>
 
-            <div class="card-value" id="users">
+            <div class="card-value" id="uniqueUsers">
                 0
+            </div>
+
+            <div class="card-subtitle">
+                Active users
             </div>
         </div>
 
     </div>
 
 
-    <!-- CHARTS -->
+    <!-- =====================================================
+         CHARTS
+         ===================================================== -->
 
     <div class="charts">
 
         <div class="chart-card">
-            <h2>Revenue / Minute</h2>
+
+            <h2>
+                Revenue History
+            </h2>
 
             <div class="chart-container">
                 <canvas id="revenueChart"></canvas>
             </div>
+
         </div>
 
 
         <div class="chart-card">
-            <h2>Events / Minute</h2>
+
+            <h2>
+                Orders & Events
+            </h2>
 
             <div class="chart-container">
-                <canvas id="eventsChart"></canvas>
+                <canvas id="ordersChart"></canvas>
             </div>
+
         </div>
 
+    </div>
+
+
+    <div class="info">
+        Last update:
+        <span id="lastUpdate">—</span>
     </div>
 
 </div>
@@ -234,260 +295,523 @@
 
 <script>
 
-let revenueChart;
-let eventsChart;
+let revenueChart = null;
+let ordersChart = null;
 
 
-// ============================================================
-// Formatting
-// ============================================================
+/* ============================================================
+   FORMAT HELPERS
+   ============================================================ */
 
-function formatMoney(value) {
+function formatNumber(value) {
 
-    return new Intl.NumberFormat(
-        "de-DE",
-        {
-            style: "currency",
-            currency: "EUR"
-        }
-    ).format(Number(value || 0));
+    const number = Number(value || 0);
+
+    return number.toLocaleString("de-DE");
 }
 
 
-// ============================================================
-// Load Current Metrics
-// ============================================================
+function formatCurrency(value) {
+
+    const number = Number(value || 0);
+
+    return number.toLocaleString("de-DE", {
+        style: "currency",
+        currency: "EUR"
+    });
+}
+
+
+/* ============================================================
+   STATUS
+   ============================================================ */
+
+function setOnline() {
+
+    const dot = document.getElementById("statusDot");
+    const text = document.getElementById("statusText");
+
+    dot.classList.remove("offline");
+
+    text.textContent = "Live";
+}
+
+
+function setOffline() {
+
+    const dot = document.getElementById("statusDot");
+    const text = document.getElementById("statusText");
+
+    dot.classList.add("offline");
+
+    text.textContent = "Offline";
+}
+
+
+/* ============================================================
+   ERROR HANDLING
+   ============================================================ */
+
+function showError(message) {
+
+    const box = document.getElementById("errorBox");
+
+    box.textContent = message;
+
+    box.style.display = "block";
+
+    setOffline();
+}
+
+
+function clearError() {
+
+    const box = document.getElementById("errorBox");
+
+    box.style.display = "none";
+
+    setOnline();
+}
+
+
+/* ============================================================
+   CURRENT METRICS
+   ============================================================ */
 
 async function loadMetrics() {
 
     try {
 
-        const response = await fetch("/api/metrics");
+        const response = await fetch(
+            "/api/metrics",
+            {
+                method: "GET",
+                cache: "no-store"
+            }
+        );
+
 
         if (!response.ok) {
-            throw new Error("Metrics API error");
+
+            throw new Error(
+                "HTTP " + response.status
+            );
         }
+
 
         const data = await response.json();
 
-        document.getElementById("revenue").textContent =
-            formatMoney(data.revenue);
 
-        document.getElementById("orders").textContent =
-            Number(data.orders || 0).toLocaleString("de-DE");
+        console.log(
+            "Current metrics:",
+            data
+        );
 
-        document.getElementById("events").textContent =
-            Number(data.events || 0).toLocaleString("de-DE");
 
-        document.getElementById("users").textContent =
-            Number(data.unique_users || 0).toLocaleString("de-DE");
+        /*
+         * Update KPI cards
+         */
 
-        setOnline();
+        document.getElementById(
+            "revenue"
+        ).textContent =
+            formatCurrency(data.revenue);
+
+
+        document.getElementById(
+            "orders"
+        ).textContent =
+            formatNumber(data.orders);
+
+
+        document.getElementById(
+            "events"
+        ).textContent =
+            formatNumber(data.events);
+
+
+        document.getElementById(
+            "uniqueUsers"
+        ).textContent =
+            formatNumber(data.unique_users);
+
+
+        /*
+         * Window timestamp
+         */
+
+        if (data.window_end) {
+
+            document.getElementById(
+                "lastUpdate"
+            ).textContent =
+                data.window_end;
+
+        } else {
+
+            document.getElementById(
+                "lastUpdate"
+            ).textContent =
+                new Date().toLocaleTimeString(
+                    "de-DE"
+                );
+        }
+
+
+        clearError();
 
     } catch (error) {
 
-        console.error(error);
-        setOffline();
+        console.error(
+            "Metrics error:",
+            error
+        );
+
+
+        showError(
+            "Metrics konnten nicht geladen werden: " +
+            error.message
+        );
     }
 }
 
 
-// ============================================================
-// Load History
-// ============================================================
+/* ============================================================
+   HISTORY
+   ============================================================ */
 
 async function loadHistory() {
 
     try {
 
-        const response = await fetch("/api/history");
+        const response = await fetch(
+            "/api/history",
+            {
+                method: "GET",
+                cache: "no-store"
+            }
+        );
+
 
         if (!response.ok) {
-            throw new Error("History API error");
+
+            throw new Error(
+                "HTTP " + response.status
+            );
         }
 
-        const data = await response.json();
 
-        updateCharts(data);
+        const history = await response.json();
 
-        setOnline();
+
+        console.log(
+            "History:",
+            history
+        );
+
+
+        if (!Array.isArray(history)) {
+
+            console.warn(
+                "History API returned:",
+                history
+            );
+
+            return;
+        }
+
+
+        updateCharts(history);
 
     } catch (error) {
 
-        console.error(error);
-        setOffline();
+        console.error(
+            "History error:",
+            error
+        );
     }
 }
 
 
-// ============================================================
-// Charts
-// ============================================================
+/* ============================================================
+   CREATE CHART LABEL
+   ============================================================ */
 
-function updateCharts(data) {
+function createLabel(item) {
+
+    const value =
+        item.window_start ||
+        item.timestamp ||
+        item.time ||
+        "";
+
+
+    if (!value) {
+        return "";
+    }
+
+
+    /*
+     * Convert Spark timestamp:
+     *
+     * 2026-08-29 15:21:00
+     *
+     * to JavaScript date format.
+     */
+
+    const date = new Date(
+        value.replace(" ", "T")
+    );
+
+
+    if (isNaN(date.getTime())) {
+
+        return value;
+    }
+
+
+    return date.toLocaleTimeString(
+        "de-DE",
+        {
+            hour: "2-digit",
+            minute: "2-digit"
+        }
+    );
+}
+
+
+/* ============================================================
+   UPDATE CHARTS
+   ============================================================ */
+
+function updateCharts(history) {
+
+    if (!history || history.length === 0) {
+
+        console.log(
+            "No history data available"
+        );
+
+        return;
+    }
+
+
+    /*
+     * Newest data should be displayed
+     * from left to right chronologically.
+     */
+
+    const data = [...history].reverse();
+
 
     const labels = data.map(
-        item => item.window_start
+        item => createLabel(item)
     );
 
-    const revenues = data.map(
+
+    const revenue = data.map(
         item => Number(item.revenue || 0)
     );
+
+
+    const orders = data.map(
+        item => Number(item.orders || 0)
+    );
+
 
     const events = data.map(
         item => Number(item.events || 0)
     );
 
 
-    // --------------------------------------------------------
-    // Revenue Chart
-    // --------------------------------------------------------
+    /* ========================================================
+       REVENUE CHART
+       ======================================================== */
 
-    if (!revenueChart) {
-
-        revenueChart = new Chart(
-            document.getElementById("revenueChart"),
-            {
-                type: "line",
-
-                data: {
-                    labels: labels,
-
-                    datasets: [
-                        {
-                            label: "Revenue (€)",
-                            data: revenues,
-                            tension: 0.25,
-                            fill: true
-                        }
-                    ]
-                },
-
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-
-                    scales: {
-                        y: {
-                            beginAtZero: false
-                        }
-                    }
-                }
-            }
+    const revenueCanvas =
+        document.getElementById(
+            "revenueChart"
         );
 
-    } else {
 
-        revenueChart.data.labels = labels;
-        revenueChart.data.datasets[0].data = revenues;
+    if (revenueChart) {
 
-        revenueChart.update();
+        revenueChart.destroy();
     }
 
 
-    // --------------------------------------------------------
-    // Events Chart
-    // --------------------------------------------------------
+    revenueChart = new Chart(
+        revenueCanvas,
+        {
+            type: "line",
 
-    if (!eventsChart) {
+            data: {
 
-        eventsChart = new Chart(
-            document.getElementById("eventsChart"),
-            {
-                type: "bar",
+                labels: labels,
 
-                data: {
-                    labels: labels,
+                datasets: [
+                    {
+                        label: "Revenue (€)",
 
-                    datasets: [
-                        {
-                            label: "Events",
-                            data: events
-                        }
-                    ]
+                        data: revenue,
+
+                        borderWidth: 2,
+
+                        tension: 0.3,
+
+                        fill: false
+                    }
+                ]
+            },
+
+            options: {
+
+                responsive: true,
+
+                maintainAspectRatio: false,
+
+                interaction: {
+                    intersect: false,
+                    mode: "index"
                 },
 
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                plugins: {
 
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
+                    legend: {
+                        display: true
+                    }
+                },
 
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
+                scales: {
+
+                    y: {
+                        beginAtZero: false
                     }
                 }
             }
+        }
+    );
+
+
+    /* ========================================================
+       ORDERS / EVENTS CHART
+       ======================================================== */
+
+    const ordersCanvas =
+        document.getElementById(
+            "ordersChart"
         );
 
-    } else {
 
-        eventsChart.data.labels = labels;
-        eventsChart.data.datasets[0].data = events;
+    if (ordersChart) {
 
-        eventsChart.update();
+        ordersChart.destroy();
     }
+
+
+    ordersChart = new Chart(
+        ordersCanvas,
+        {
+            type: "line",
+
+            data: {
+
+                labels: labels,
+
+                datasets: [
+
+                    {
+                        label: "Orders",
+
+                        data: orders,
+
+                        borderWidth: 2,
+
+                        tension: 0.3,
+
+                        fill: false
+                    },
+
+                    {
+                        label: "Events",
+
+                        data: events,
+
+                        borderWidth: 2,
+
+                        tension: 0.3,
+
+                        fill: false
+                    }
+
+                ]
+            },
+
+            options: {
+
+                responsive: true,
+
+                maintainAspectRatio: false,
+
+                interaction: {
+                    intersect: false,
+                    mode: "index"
+                },
+
+                plugins: {
+
+                    legend: {
+                        display: true
+                    }
+                },
+
+                scales: {
+
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        }
+    );
 }
 
 
-// ============================================================
-// Connection Status
-// ============================================================
+/* ============================================================
+   REFRESH
+   ============================================================ */
 
-function setOnline() {
+async function refreshDashboard() {
 
-    document.getElementById("statusDot").style.background =
-        "#22c55e";
+    /*
+     * Metrics are independent from history.
+     * Even if history fails, KPIs still work.
+     */
 
-    document.getElementById("statusText").textContent =
-        "Live";
+    await loadMetrics();
 
-    document.getElementById("errorBox").style.display =
-        "none";
+    await loadHistory();
 }
 
 
-function setOffline() {
+/* ============================================================
+   INITIAL LOAD
+   ============================================================ */
 
-    document.getElementById("statusDot").style.background =
-        "#ef4444";
-
-    document.getElementById("statusText").textContent =
-        "Offline";
-}
-
-
-// ============================================================
-// Initial Load
-// ============================================================
-
-loadMetrics();
-loadHistory();
-
-
-// ============================================================
-// Live Refresh
-// ============================================================
-
-setInterval(
-    loadMetrics,
-    2000
+console.log(
+    "Realtime E-Commerce Dashboard started"
 );
 
+
+refreshDashboard();
+
+
+/*
+ * Update every 5 seconds.
+ */
+
 setInterval(
-    loadHistory,
+    refreshDashboard,
     5000
 );
 
@@ -495,3 +819,4 @@ setInterval(
 
 </body>
 </html>
+

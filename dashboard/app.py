@@ -31,6 +31,7 @@ def get_redis():
 # Dashboard
 # ============================================================
 
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -40,20 +41,18 @@ def index():
 # Current Metrics
 # ============================================================
 
+
 @app.route("/api/metrics")
 def api_metrics():
 
     client = None
 
     try:
-
         client = get_redis()
 
         client.ping()
 
-        data = client.hgetall(
-            "ecommerce:metrics"
-        )
+        data = client.hgetall("ecommerce:metrics")
 
         if not data:
             return jsonify(
@@ -69,27 +68,14 @@ def api_metrics():
 
         return jsonify(
             {
-                "revenue": float(
-                    data.get("revenue", 0)
-                ),
-
-                "orders": int(
-                    data.get("orders", 0)
-                ),
-
-                "events": int(
-                    data.get("events", 0)
-                ),
-
-                "unique_users": int(
-                    data.get("unique_users", 0)
-                ),
-
+                "revenue": float(data.get("revenue", 0)),
+                "orders": int(data.get("orders", 0)),
+                "events": int(data.get("events", 0)),
+                "unique_users": int(data.get("unique_users", 0)),
                 "window_start": data.get(
                     "window_start",
                     "",
                 ),
-
                 "window_end": data.get(
                     "window_end",
                     "",
@@ -98,19 +84,11 @@ def api_metrics():
         )
 
     except Exception as e:
+        print(f"Metrics API error: {e}")
 
-        print(
-            f"Metrics API error: {e}"
-        )
-
-        return jsonify(
-            {
-                "error": str(e)
-            }
-        ), 500
+        return jsonify({"error": str(e)}), 500
 
     finally:
-
         if client is not None:
             try:
                 client.close()
@@ -122,64 +100,55 @@ def api_metrics():
 # History
 # ============================================================
 
+
 @app.route("/api/history")
 def api_history():
 
     client = None
 
     try:
-
         client = get_redis()
 
         client.ping()
 
-        keys = client.keys(
-            "ecommerce:history:*"
-        )
+        keys = client.keys("ecommerce:history:*")
 
         history = []
 
         for key in keys:
-
             data = client.hgetall(key)
 
             if not data:
                 continue
 
             try:
-
                 item = {
                     "window_start": data.get(
                         "window_start",
                         "",
                     ),
-
                     "window_end": data.get(
                         "window_end",
                         "",
                     ),
-
                     "revenue": float(
                         data.get(
                             "revenue",
                             0,
                         )
                     ),
-
                     "orders": int(
                         data.get(
                             "orders",
                             0,
                         )
                     ),
-
                     "events": int(
                         data.get(
                             "events",
                             0,
                         )
                     ),
-
                     "unique_users": int(
                         data.get(
                             "unique_users",
@@ -191,22 +160,13 @@ def api_history():
                 history.append(item)
 
             except (ValueError, TypeError) as e:
-
-                print(
-                    f"Invalid history entry {key}: {e}"
-                )
-
+                print(f"Invalid history entry {key}: {e}")
 
         # ----------------------------------------------------
         # Sort oldest -> newest
         # ----------------------------------------------------
 
-        history.sort(
-            key=lambda item: item[
-                "window_start"
-            ]
-        )
-
+        history.sort(key=lambda item: item["window_start"])
 
         # ----------------------------------------------------
         # Return JSON
@@ -215,19 +175,11 @@ def api_history():
         return jsonify(history)
 
     except Exception as e:
+        print(f"History API error: {e}")
 
-        print(
-            f"History API error: {e}"
-        )
-
-        return jsonify(
-            {
-                "error": str(e)
-            }
-        ), 500
+        return jsonify({"error": str(e)}), 500
 
     finally:
-
         if client is not None:
             try:
                 client.close()
@@ -239,13 +191,13 @@ def api_history():
 # Health Check
 # ============================================================
 
+
 @app.route("/health")
 def health():
 
     client = None
 
     try:
-
         client = get_redis()
 
         client.ping()
@@ -258,7 +210,6 @@ def health():
         )
 
     except Exception as e:
-
         return jsonify(
             {
                 "status": "error",
@@ -267,7 +218,6 @@ def health():
         ), 500
 
     finally:
-
         if client is not None:
             try:
                 client.close()
@@ -280,10 +230,8 @@ def health():
 # ============================================================
 
 if __name__ == "__main__":
-
     app.run(
         host="0.0.0.0",
         port=5000,
         debug=False,
     )
-
