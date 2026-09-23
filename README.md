@@ -1,330 +1,189 @@
-# Real-Time E-Commerce Data Platform
+# Real-Time E-Commerce Analytics Platform
 
-A real-time data engineering platform that simulates e-commerce activity, processes events with **Apache Kafka** and **Spark Structured Streaming**, stores current metrics in **Redis**, and visualizes them through a web dashboard.
+A real-time e-commerce analytics pipeline built around **Kafka**, **Spark Structured Streaming**, **Redis**, and a **Flask dashboard**.
 
-The project also contains a **Data Lake / Databricks** layer for historical analytics and demonstrates how real-time and batch-oriented workloads can be combined in one data platform.
+The project demonstrates how continuously generated e-commerce events can be processed in real time and transformed into live metrics for a web dashboard.
 
-## Architecture
+## ✨ Features
 
-```text
-                         E-Commerce Events
-                                │
-                                ▼
-                       Python Event Producer
-                                │
-                                ▼
-                         Apache Kafka
-                       ecommerce-events
-                                │
-                                ▼
-                  Spark Structured Streaming
-                                │
-                     1-minute aggregation
-                                │
-                                ▼
-                              Redis
-                                │
-                                ▼
-                           Flask API
-                                │
-                                ▼
-                           Dashboard
-```
-
-Historical analytics follow a separate path:
-
-```text
-                         Kafka / Raw Events
-                                │
-                                ▼
-                            Data Lake
-                                │
-                                ▼
-                             Bronze
-                                │
-                                ▼
-                             Silver
-                                │
-                                ▼
-                              Gold
-                                │
-                                ▼
-                           Delta Lake
-                                │
-                                ▼
-                           Databricks
-                                │
-                                ▼
-                        Historical Analytics
-```
-
-The real-time layer is designed for low-latency metrics, while the Data Lake and Databricks layer is intended for historical analysis.
-
-## Features
-
-* Synthetic e-commerce event generation
+* Real-time e-commerce event generation
 * Apache Kafka event streaming
 * Spark Structured Streaming
-* One-minute streaming windows
-* Real-time revenue calculation
-* Purchase and refund handling
-* Approximate unique-user calculation
-* Redis-based metric storage
-* Flask REST API
-* Web dashboard
-* Docker Compose development environment
-* Data Lake architecture
-* Bronze / Silver / Gold processing concept
-* Delta Lake
-* Databricks analytics
-* Real-time and historical workload separation
+* Redis for live metrics
+* Flask dashboard
+* Structured event processing
+* Kafka topic with multiple partitions
+* Spark checkpointing for streaming recovery
+* Separate real-time and historical analytics concepts
+* Docker-based development environment
 
-## Technology Stack
+## 🏗️ Architecture
 
-| Component          | Technology                        |
-| ------------------ | --------------------------------- |
-| Event Producer     | Python                            |
-| Message Broker     | Apache Kafka                      |
-| Stream Processing  | Apache Spark Structured Streaming |
-| Metrics Store      | Redis                             |
-| Backend API        | Flask                             |
-| Frontend           | HTML / CSS / JavaScript           |
-| Containerization   | Docker                            |
-| Orchestration      | Docker Compose                    |
-| Historical Storage | Data Lake / Delta Lake            |
-| Analytics          | Databricks                        |
-
-The current README documents Spark 3.5.7 as the Spark version used by the project.
-
-## Repository Structure
+The main real-time pipeline is:
 
 ```text
-realtime-ecommerce-platform/
-├── producer/
-│   ├── producer.py
-│   └── requirements.txt
-│
-├── spark/
-│   ├── streaming.py
-│   ├── Dockerfile
-│   └── requirements.txt
-│
-├── dashboard/
-│   ├── app.py
-│   ├── templates/
-│   │   └── index.html
-│   └── static/
-│       ├── style.css
-│       └── dashboard.js
-│
-├── databricks/
-│   └── ...
-│
-├── docs/
-│   └── dashboard.png
-│
-├── docker-compose.yml
-└── README.MD
+                    E-Commerce Events
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │   Producer  │
+                    └──────┬──────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │    Kafka    │
+                    │ ecommerce-  │
+                    │   events    │
+                    └──────┬──────┘
+                           │
+                           ▼
+              ┌────────────────────────┐
+              │ Spark Structured        │
+              │ Streaming              │
+              └───────────┬────────────┘
+                          │
+                          ▼
+                    ┌─────────────┐
+                    │    Redis    │
+                    │ ecommerce:  │
+                    │   metrics   │
+                    └──────┬──────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │    Flask    │
+                    │  Dashboard  │
+                    └─────────────┘
 ```
 
-The repository currently contains the producer, Spark, dashboard, Databricks and documentation components shown above.
+The real-time path is intentionally kept separate from the historical analytics layer.
 
-## Event Model
+## 🛠️ Technology Stack
 
-The producer generates synthetic e-commerce events.
+* **Python**
+* **Apache Kafka**
+* **Apache Spark**
+* **Spark Structured Streaming**
+* **Redis**
+* **Flask**
+* **Docker**
+* **Databricks** for extended/historical analytics
 
-Supported event types include:
+## 📡 Event Streaming
 
-```text
-view_product
-add_to_cart
-purchase
-refund
-```
-
-Each event contains information such as:
-
-```json
-{
-  "event_id": "b5463552-84ed-4532-923d-7c0422ec1c69",
-  "user_id": 425,
-  "product_id": 3,
-  "event_type": "add_to_cart",
-  "amount": 0.0,
-  "timestamp": "2026-08-29T13:30:18.924514"
-}
-```
-
-Purchase events contain a positive amount, while refund events are used to reduce calculated revenue.
-
-## Kafka
-
-Apache Kafka is used as the central event broker.
-
-The main topic is:
+The event producer generates e-commerce events which are published to the Kafka topic:
 
 ```text
 ecommerce-events
 ```
 
-The current project documentation describes the topic with three partitions and a replication factor of one.
-
-Kafka separates event generation from event processing:
+The current Kafka configuration uses:
 
 ```text
-Producer
-   │
-   ▼
- Kafka
-   │
-   ▼
- Spark
+Partitions: 3
+Replication Factor: 1
 ```
 
-The producer does not need to know how Spark processes the events, and Spark does not need to know how the events were generated.
+The three partitions allow the stream to be processed in parallel.
 
-## Spark Structured Streaming
+A simplified event looks like:
 
-Spark consumes events from Kafka and performs the real-time processing.
-
-The streaming pipeline:
-
-1. Reads events from Kafka
-2. Parses the JSON payload
-3. Applies the event schema
-4. Calculates revenue
-5. Groups events into one-minute windows
-6. Calculates streaming metrics
-7. Writes the current metrics to Redis
-
-The event schema is:
-
-```text
-event_id       STRING
-user_id        INTEGER
-product_id     INTEGER
-event_type     STRING
-amount         DOUBLE
-timestamp      TIMESTAMP
+```json id="e3t1ku"
+{
+  "event_id": "12345",
+  "event_type": "purchase",
+  "product_id": "product-001",
+  "user_id": "user-123",
+  "amount": 49.99,
+  "timestamp": "2026-01-01T12:00:00Z"
+}
 ```
 
-## Revenue Calculation
+The event model can be extended with additional product, customer, and transaction attributes.
 
-Revenue is derived from the event type:
+## ⚡ Spark Structured Streaming
 
-```text
-purchase  → +amount
-refund    → -amount
-view      → 0
-cart      → 0
-```
+Spark Structured Streaming consumes the Kafka events and processes them continuously.
 
-Conceptually:
+The streaming layer is responsible for:
 
-```text
-net revenue = purchases - refunds
-```
+* reading events from Kafka
+* parsing the event data
+* applying transformations
+* calculating real-time metrics
+* writing the resulting metrics to Redis
 
-This allows the streaming pipeline to calculate current net revenue directly from the event stream.
+The streaming application uses checkpoints so that the processing state can be recovered after a restart.
 
-## Streaming Metrics
+## 📊 Real-Time Metrics
 
-Events are aggregated in one-minute windows.
-
-The current metrics include:
-
-* `window_start`
-* `window_end`
-* `revenue`
-* `orders`
-* `events`
-* `unique_users`
-
-For unique users, the implementation uses Spark's streaming-compatible approximate distinct aggregation:
-
-```python
-approx_count_distinct("user_id")
-```
-
-rather than `countDistinct()`, which is not supported for this streaming aggregation setup.
-
-## Redis
-
-Redis acts as the low-latency serving layer for the dashboard.
-
-The current metrics are stored under:
+Processed metrics are stored in Redis under:
 
 ```text
 ecommerce:metrics
 ```
 
-Stored values include:
+Redis provides a lightweight and fast data store for the dashboard to retrieve current metrics without querying the streaming engine directly.
+
+The resulting flow is:
 
 ```text
-revenue
-orders
-events
-unique_users
-window_start
-window_end
+Kafka
+  ↓
+Spark Structured Streaming
+  ↓
+Aggregated Metrics
+  ↓
+Redis
+  ↓
+Flask Dashboard
 ```
 
-The dashboard accesses these values through the Flask API rather than connecting directly to Redis.
+## 🖥️ Dashboard
 
-## Flask API
+The Flask application provides a simple web interface for displaying the processed real-time metrics.
 
-The Flask application provides the backend for the dashboard.
-
-Its responsibilities include:
-
-* Reading current metrics from Redis
-* Providing metrics through HTTP
-* Serving the dashboard frontend
-* Providing historical data where configured
-
-The local application is exposed on:
-
-```text
-http://localhost:5000
-```
-
-The exact API endpoints are defined by the current `dashboard/app.py` implementation.
-
-## Dashboard
-
-The web dashboard displays the current streaming metrics.
-
-Typical metrics include:
-
-* Current revenue
-* Number of orders
-* Number of events
-* Unique users
-* Current processing window
-
-The repository contains a dashboard screenshot at:
-
-```text
-docs/dashboard.png
-```
+### Dashboard Result
 
 ![Real-Time E-Commerce Dashboard](docs/dashboard.png)
 
-## Docker
+The dashboard is the visual result of the complete streaming pipeline.
 
-The complete real-time environment can be started with Docker Compose.
+## 🔄 End-to-End Workflow
 
-```bash
-docker compose up -d --build
+The complete workflow can be summarized as:
+
+```text
+1. Generate e-commerce event
+2. Publish event to Kafka
+3. Kafka distributes the event
+4. Spark Structured Streaming consumes the event
+5. Spark transforms and aggregates the data
+6. Metrics are written to Redis
+7. Flask retrieves the metrics
+8. Dashboard displays the current results
 ```
 
-Check the running services:
+## 📂 Project Structure
 
-```bash
-docker compose ps
+```text
+realtime-ecommerce-platform/
+├── ...
+├── docs/
+│   └── dashboard.png
+├── ...
+└── README.md
 ```
 
-The documented environment contains services for:
+The project is organized around the individual components of the streaming pipeline.
+
+The exact implementation can evolve independently for the producer, Kafka integration, Spark streaming job, Redis storage, and dashboard.
+
+## 🐳 Docker
+
+Docker is used to simplify the local infrastructure required by the project.
+
+The development environment can include the services required for:
 
 ```text
 Kafka
@@ -333,404 +192,137 @@ Redis
 Dashboard
 ```
 
-Docker Compose provides the network that allows the services to communicate using their container/service names.
+This makes it possible to reproduce the streaming architecture locally without installing every infrastructure component directly on the host system.
 
-## Running the Producer
+## 🧪 Debugging & Checkpointing
 
-The Python producer can be started with:
+Streaming systems require special attention to state and recovery.
 
-```bash
-python3 producer.py
-```
+Spark Structured Streaming uses checkpoints to keep track of streaming progress and state.
 
-If the Kafka Python client is not installed:
-
-```bash
-pip install kafka-python
-```
-
-or install the producer requirements:
-
-```bash
-pip install -r requirements.txt
-```
-
-The producer continuously generates synthetic e-commerce events and sends them to Kafka.
-
-## Monitoring the Pipeline
-
-### Docker
-
-```bash
-docker compose ps
-```
-
-### Spark logs
-
-```bash
-docker compose logs -f spark
-```
-
-### Kafka
-
-List topics:
-
-```bash
-docker exec ecommerce-kafka \
-  /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --list
-```
-
-Inspect the main topic:
-
-```bash
-docker exec ecommerce-kafka \
-  /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --describe \
-  --topic ecommerce-events
-```
-
-### Redis
-
-Inspect the latest metrics:
-
-```bash
-docker exec ecommerce-redis \
-  redis-cli HGETALL ecommerce:metrics
-```
-
-### Dashboard
-
-Open:
+When debugging the pipeline, the following components are particularly important:
 
 ```text
-http://localhost:5000
+Producer
+   ↓
+Kafka Topic
+   ↓
+Spark Consumer
+   ↓
+Spark Processing
+   ↓
+Checkpoint
+   ↓
+Redis
+   ↓
+Dashboard
 ```
 
-These checks follow the debugging workflow documented by the project.
+When a metric appears incorrect, each stage can therefore be inspected independently.
 
-## Debugging
+## 🔁 Restart & Reliability Considerations
 
-A useful troubleshooting order is:
+A real-time pipeline must account for failures and retries.
 
-```text
-1. Docker
-2. Kafka
-3. Producer
-4. Spark
-5. Redis
-6. Flask
-7. Dashboard
-```
+Important considerations include:
 
-### Kafka topic problems
+* Kafka consumer offsets
+* Spark checkpoints
+* duplicate events
+* Redis updates
+* service restarts
+* malformed events
+* temporary service outages
 
-Verify that `ecommerce-events` exists:
+For a production deployment, metric updates should be designed so that retries do not unintentionally count the same business event multiple times.
 
-```bash
-docker exec ecommerce-kafka \
-  /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 \
-  --describe \
-  --topic ecommerce-events
-```
+The current project is primarily a portfolio/demo implementation rather than a fully hardened production streaming platform.
 
-### Redis connection problems
+## 📈 Historical Analytics
 
-Verify that Spark and Redis are connected to the same Docker network.
+Real-time analytics and historical analytics serve different purposes.
 
-```bash
-docker network inspect realtime-ecommerce-platform_default
-```
-
-### Producer dependency
-
-If Python reports:
-
-```text
-ModuleNotFoundError: No module named 'kafka'
-```
-
-install:
-
-```bash
-pip install kafka-python
-```
-
-### Spark distinct aggregation
-
-For streaming unique-user calculations, use:
-
-```python
-approx_count_distinct("user_id")
-```
-
-instead of:
-
-```python
-countDistinct("user_id")
-```
-
-These are documented issues and solutions in the current project README.
-
-## Checkpointing
-
-The Spark streaming application currently uses:
-
-```text
-/tmp/checkpoints/ecommerce
-```
-
-Checkpoints allow Spark to maintain streaming state and offsets.
-
-For production deployments, the checkpoint location should use persistent storage instead of a temporary container filesystem. Object storage such as S3, Azure Blob Storage or Google Cloud Storage can be used depending on the deployment environment.
-
-## Historical Analytics
-
-Redis is used for current metrics and is not intended to be the long-term storage layer.
-
-The historical architecture follows a Medallion-style approach:
-
-```text
-Raw Events
-    │
-    ▼
- Bronze
-    │
-    ▼
- Silver
-    │
-    ▼
- Gold
-    │
-    ▼
-Delta Lake
-    │
-    ▼
-Databricks
-```
-
-Potential analytical datasets include:
-
-* Daily revenue
-* Daily orders
-* Product metrics
-* Customer activity
-* Conversion metrics
-* Refund metrics
-
-The repository contains a `databricks/` directory for this analytics layer.
-
-## Real-Time vs. Historical Processing
-
-The project intentionally separates two workloads.
-
-### Real-Time
+The real-time pipeline focuses on:
 
 ```text
 Kafka
-  ↓
+→ Spark Streaming
+→ Redis
+→ Dashboard
+```
+
+Historical analytics can be handled separately using a data-lake or Databricks-oriented workflow.
+
+This separation avoids forcing the live dashboard pipeline to also act as the long-term analytical storage layer.
+
+## ☁️ Production Considerations
+
+A production version could extend the architecture with:
+
+* Kafka replication across multiple brokers
+* schema management
+* stronger event validation
+* exactly-once/idempotent processing strategies
+* persistent analytical storage
+* monitoring and alerting
+* centralized logging
+* secrets management
+* authentication for the dashboard
+* container orchestration
+* cloud deployment
+
+The current implementation intentionally focuses on demonstrating the core real-time data flow.
+
+## 🚀 Getting Started
+
+Start the required infrastructure using the project's Docker configuration.
+
+After the services are running, start the event producer and streaming application.
+
+The Flask dashboard is available locally at:
+
+```text id="q4tq1e"
+http://localhost:5000
+```
+
+The exact startup commands depend on the individual services included in the repository.
+
+## 🎯 Project Purpose
+
+This project demonstrates a complete real-time data engineering workflow:
+
+```text
+Event Generation
+       ↓
+     Kafka
+       ↓
 Spark Structured Streaming
-  ↓
-Redis
-  ↓
-Flask
-  ↓
-Dashboard
+       ↓
+     Redis
+       ↓
+Flask Dashboard
 ```
 
-Used for:
+The project is intended to demonstrate practical experience with **event streaming, distributed processing, real-time aggregation, caching, and dashboard presentation**.
 
-* Live revenue
-* Current order counts
-* Current event volume
-* Low-latency monitoring
+## 🔮 Possible Improvements
 
-### Historical
+Potential future improvements include:
 
-```text
-Raw Events
-  ↓
-Data Lake
-  ↓
-Bronze
-  ↓
-Silver
-  ↓
-Gold
-  ↓
-Delta Lake
-  ↓
-Databricks
-```
+* schema registry integration
+* stronger event validation
+* Kafka replication
+* dead-letter handling
+* automated integration tests
+* metrics and monitoring
+* persistent historical storage
+* Databricks integration
+* cloud deployment
+* authentication and authorization
+* more advanced dashboard visualizations
 
-Used for:
+---
 
-* Long-term analysis
-* Product performance
-* Customer behavior
-* Revenue trends
-* Business intelligence
-
-This separation keeps the low-latency serving path independent from the historical analytics layer.
-
-## Production Considerations
-
-The current repository is primarily a portfolio and learning project. For production deployment, additional work would be required.
-
-Potential areas include:
-
-### Kafka
-
-* Higher replication factor
-* Authentication
-* TLS
-* Monitoring
-* Partition and retention configuration
-
-### Spark
-
-* Persistent checkpoints
-* Watermarking
-* State management
-* Resource configuration
-* Monitoring
-
-### Redis
-
-* Persistent storage
-* Authentication
-* High availability
-* Memory policies
-
-### Flask
-
-* Production WSGI server
-* Authentication
-* Rate limiting
-* API versioning
-* Structured logging
-
-### Dashboard
-
-* Authentication
-* Error handling
-* Historical charts
-* Server-sent or WebSocket updates
-
-### Data Lake / Databricks
-
-* Object storage
-* Data-quality checks
-* Partitioning
-* Schema evolution
-* Workflow orchestration
-* Monitoring
-
-These items represent production extensions rather than requirements for the current local project.
-
-## Example End-to-End Flow
-
-A purchase event travels through the platform as follows:
-
-```text
-User performs a purchase
-        │
-        ▼
-Python Producer
-        │
-        ▼
-Apache Kafka
-        │
-        ▼
-ecommerce-events
-        │
-        ▼
-Spark Structured Streaming
-        │
-        ├── JSON parsing
-        ├── Revenue calculation
-        └── 1-minute aggregation
-        │
-        ▼
-Redis
-        │
-        ▼
-Flask API
-        │
-        ▼
-Dashboard
-```
-
-For historical processing:
-
-```text
-Streaming / Raw Events
-        │
-        ▼
-Data Lake
-        │
-        ▼
-Bronze
-        │
-        ▼
-Silver
-        │
-        ▼
-Gold
-        │
-        ▼
-Delta Lake
-        │
-        ▼
-Databricks
-        │
-        ▼
-Analytics / BI
-```
-
-## Project Goals
-
-This project demonstrates practical data-engineering concepts including:
-
-* Event-driven architecture
-* Real-time streaming
-* Apache Kafka
-* Spark Structured Streaming
-* Stream aggregation
-* Redis
-* REST APIs
-* Docker and Docker Compose
-* Data Lake architecture
-* Medallion architecture
-* Delta Lake
-* Databricks
-* SQL analytics
-* Production-oriented debugging
-
-The focus is an end-to-end data platform rather than only a dashboard.
-
-## Current Status
-
-The currently documented real-time pipeline is:
-
-```text
-Python Producer
-      ↓
-Apache Kafka
-      ↓
-Spark Structured Streaming
-      ↓
-1-Minute Metrics
-      ↓
-Redis
-      ↓
-Flask API
-      ↓
-Dashboard
-```
-
-The repository also contains the Databricks/Data Lake components for extending the platform toward historical analytics.
+**Project:** Real-Time E-Commerce Analytics Platform
+**Author:** Markus
 
